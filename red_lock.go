@@ -29,14 +29,12 @@ func (l *RedLock) TryLock(ctx context.Context) error {
 	randomValue := gofakeit.UUID()
 	var wg sync.WaitGroup
 	wg.Add(len(l.clients))
-	// 这里主要是确保不要加锁太久，否则其他锁已经释放了
-	lockCtx, _ := context.WithTimeout(ctx, resetTTLInterval)
 	// 成功获得锁的Redis实例的客户端
 	successClients := make(chan *redis.Client, len(l.clients))
 	for _, client := range l.clients {
 		go func(client *redis.Client) {
 			defer wg.Done()
-			success, err := client.SetNX(lockCtx, l.resource, randomValue, ttl).Result()
+			success, err := client.SetNX(ctx, l.resource, randomValue, ttl).Result()
 			if err != nil {
 				return
 			}
@@ -44,7 +42,8 @@ func (l *RedLock) TryLock(ctx context.Context) error {
 			if !success {
 				return
 			}
-			// 加锁成功
+			// 加锁成功，启动看门狗
+			go l.startWatchDog()
 			successClients <- client
 		}(client)
 	}
@@ -56,6 +55,7 @@ func (l *RedLock) TryLock(ctx context.Context) error {
 		// 就算加锁失败，也要把已经获得的锁给释放掉
 		for client := range successClients {
 			go func(client *redis.Client) {
+				ctx, _ := context.WithTimeout(context.Background(), ttl)
 				l.script.Run(ctx, client, []string{l.resource}, randomValue)
 			}(client)
 		}
@@ -68,7 +68,7 @@ func (l *RedLock) TryLock(ctx context.Context) error {
 	for successClient := range successClients {
 		l.successClients = append(l.successClients, successClient)
 	}
-	go l.startWatchDog()
+
 	return nil
 }
 
@@ -81,8 +81,8 @@ func (l *RedLock) startWatchDog() {
 			// 延长锁的过期时间
 			for _, client := range l.successClients {
 				go func(client *redis.Client) {
-					timeout, _ := context.WithTimeout(context.Background(), ttl-resetTTLInterval)
-					client.Expire(timeout, l.resource, ttl)
+					ctx, _ := context.WithTimeout(context.Background(), ttl-resetTTLInterval)
+					client.Expire(ctx, l.resource, ttl)
 				}(client)
 			}
 		case <-l.watchDog:
