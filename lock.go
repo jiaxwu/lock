@@ -100,6 +100,7 @@ func (l *Lock) startWatchDog() {
 			// 延长锁的过期时间
 			ctx, _ := context.WithTimeout(context.Background(), l.ttl/3*2)
 			ok, err := l.client.Expire(ctx, l.resource, l.ttl).Result()
+			// 异常或锁已经不存在则不再续期
 			if err != nil || !ok {
 				return
 			}
