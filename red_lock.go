@@ -2,10 +2,11 @@ package lock
 
 import (
 	"context"
-	"github.com/brianvoe/gofakeit/v6"
-	"github.com/go-redis/redis/v8"
 	"sync"
 	"time"
+
+	"github.com/brianvoe/gofakeit/v6"
+	"github.com/go-redis/redis/v8"
 )
 
 type RedLock struct {
@@ -55,8 +56,9 @@ func (l *RedLock) TryLock(ctx context.Context) error {
 		// 就算加锁失败，也要把已经获得的锁给释放掉
 		for client := range successClients {
 			go func(client *redis.Client) {
-				ctx, _ := context.WithTimeout(context.Background(), ttl)
+				ctx, cancel := context.WithTimeout(context.Background(), ttl)
 				l.script.Run(ctx, client, []string{l.resource}, randomValue)
+				cancel()
 			}(client)
 		}
 		return ErrLockFailed
@@ -82,8 +84,9 @@ func (l *RedLock) startWatchDog() {
 			// 延长锁的过期时间
 			for _, client := range l.successClients {
 				go func(client *redis.Client) {
-					ctx, _ := context.WithTimeout(context.Background(), ttl-resetTTLInterval)
+					ctx, cancel := context.WithTimeout(context.Background(), ttl-resetTTLInterval)
 					client.Expire(ctx, l.resource, ttl)
+					cancel()
 				}(client)
 			}
 		case <-l.watchDog:
