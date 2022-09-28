@@ -75,6 +75,7 @@ func (l *RedLock) TryLock(ctx context.Context) error {
 func (l *RedLock) startWatchDog() {
 	l.watchDog = make(chan struct{})
 	ticker := time.NewTicker(resetTTLInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:

@@ -3,9 +3,10 @@ package lock
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-redis/redis/v8"
-	"time"
 )
 
 // Locker 可以通过它得到一把锁
@@ -60,6 +61,7 @@ func (l *Lock) Lock(ctx context.Context) error {
 	}
 	// 加锁失败，不断尝试
 	ticker := time.NewTicker(l.tryLockInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -94,6 +96,7 @@ func (l *Lock) TryLock(ctx context.Context) error {
 
 func (l *Lock) startWatchDog() {
 	ticker := time.NewTicker(l.ttl / 3)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
